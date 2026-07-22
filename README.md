@@ -17,6 +17,7 @@ windows-pitfalls init
 - **操作系统** — Windows 10 / Windows 11
 - **Python** — 3.11 或更高版本
 - **Git** — 用于克隆仓库和同步坑数据
+- **GitHub CLI `gh`** — 用于自动提 PR（记新坑时自动走 fork → PR → 合入）
 - **Claude Code**（推荐）— 自动启动 MCP Server，其他 AI 工具需手动配置
 
 ## 使用说明
@@ -24,8 +25,14 @@ windows-pitfalls init
 安装后正常用 AI 就行：
 
 - **你** — 正常使用 AI，不需要为知识库做任何事
-- **MCP 自动做** — 搜索已知坑、对比去重、记录新坑、同步 GitHub
+- **MCP 自动做** — 搜索已知坑、对比去重、记录新坑、提 PR 合入
 - **不需要** — 手动管理文件、重建索引、敲命令
+
+查看调用记录：
+
+```bash
+windows-pitfalls log
+```
 
 ## MCP 工具
 
@@ -33,7 +40,16 @@ windows-pitfalls init
 搜索已知坑。支持按工具、OS、严重程度过滤。
 
 ### record_pitfall
-记录新坑。自动去重（按标题/症状相似度匹配），写文件后自动重建索引。
+记录新坑。自动去重（按标题/症状相似度匹配），写文件后自动重建索引 + git commit + 提 PR。
+
+## CLI 命令
+
+| 命令 | 用途 |
+|------|------|
+| `windows-pitfalls init` | 首次初始化，创建 `~/.windows-pitfalls/` |
+| `windows-pitfalls start` | 启动 MCP Server（一般被 Claude Code 自动调用） |
+| `windows-pitfalls index` | 手动重建索引 |
+| `windows-pitfalls log` | 查看 search / record 调用记录 |
 
 ## 架构
 
@@ -87,11 +103,21 @@ created: 2026-07-22
 ...
 ```
 
+## 贡献坑
+
+任何人都能加坑——装好 `gh` 并登录后，`record_pitfall` 记坑时自动：
+
+```
+commit → push 分支 → gh pr create → GitHub Action 验证（只增不删）→ 自动合入 master
+```
+
+不需要 fork、不需要提 Issue、不需要等人审核。坑数据直接进库，下次别人 pull 就能搜到。
+
 ## 设计原则
 
 1. **AI 优先** — 人和 AI 同时服务，优先保 AI 效率
 2. **低配置入职** — 一次 `pip install`，不绑定模型
-3. **贡献无感** — AI 发现新坑时自动记录，即时或非即时提交
+3. **贡献无感** — AI 发现新坑时自动记录，自动提 PR 合入
 4. **去重必须** — 同一条坑不记两次
 5. **自动验证** — 不依赖人工逐条审核
 6. **细记录，粗匹配** — 记录时如实记版本，查询时宽松匹配
