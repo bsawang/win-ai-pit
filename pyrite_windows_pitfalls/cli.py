@@ -1,8 +1,6 @@
 """CLI for Windows Pitfalls — system-level MCP server management."""
 
 import argparse
-import os
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -50,7 +48,7 @@ def cmd_init(args):
             return
         shutil.rmtree(data_dir)
 
-    # Clone repo as data directory
+    # Clone repo as data directory (keep .git for sync capability)
     print(f"克隆仓库到 {data_dir} ...")
     result = subprocess.run(
         ["git", "clone", "--depth", "1", GITHUB_REPO, str(data_dir)],
@@ -61,10 +59,8 @@ def cmd_init(args):
         sys.exit(1)
     print("克隆完成")
 
-    # Remove git history (user will set up their own remote)
-    git_dir = data_dir / ".git"
-    if git_dir.exists():
-        shutil.rmtree(git_dir)
+    # Set up remote for sync (origin → GitHub)
+    # .git is kept so git pull/push work out of the box
 
     # Write pyrite config
     _get_pyrite_config_dir().mkdir(parents=True, exist_ok=True)
