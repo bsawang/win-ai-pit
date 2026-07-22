@@ -1,5 +1,7 @@
 # Windows 避坑指南
 
+直接对 AI 说：**"安装 https://github.com/bsawang/win-ai-pit.git"**，或手动按下方步骤操作。
+
 AI 驱动的 Windows 开发/运维踩坑知识库。专门解决 AI 在 Windows 环境下给出 Unix 风格错误答案的问题。
 
 ## 核心理念
@@ -56,35 +58,27 @@ created: 2026-07-22
 ...
 ```
 
-## 使用方式
-
-### 安装
+## 安装
 
 ```bash
 git clone https://github.com/bsawang/win-ai-pit.git
 cd win-ai-pit
+
+# 一键安装（Windows 用户双击 install.bat 也行）
 pip install -e .
 python scripts/setup.py
 ```
 
-### 启动 MCP Server
+## 使用
+
+### MCP Server（自动启动）
+
+配好 `.claude/settings.json`（已自带），Claude Code 打开项目时自动拉起。
+
+### MCP Server（手动启动）
 
 ```bash
-# 直接启动
 python -m pyrite.server.mcp_server --tier admin
-
-# 或用 Make
-make start
-```
-
-Windows 下也可以双击 `scripts/start-mcp.bat`。
-
-### 重建索引
-
-```bash
-python -c "from pyrite.config import load_config; from pyrite.storage.database import PyriteDB; from pyrite.storage.index import IndexManager; c=load_config(); d=PyriteDB(c.settings.index_path); i=IndexManager(d); [i.index_kb(kb.name) for kb in c.knowledge_bases]; d.close()"
-# 或用 Make
-make index
 ```
 
 ### MCP 工具
