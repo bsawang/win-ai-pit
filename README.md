@@ -4,7 +4,11 @@ AI 驱动的 Windows 开发/运维踩坑知识库。专门解决 AI 在 Windows 
 
 ## 安装
 
-对你的 AI 说 `帮我装这个项目：https://github.com/bsawang/win-ai-pit.git`
+对你的 AI 说
+
+```
+帮我装这个项目：https://github.com/bsawang/win-ai-pit.git
+```
 
 或者按照下面的流程手动安装：
 
