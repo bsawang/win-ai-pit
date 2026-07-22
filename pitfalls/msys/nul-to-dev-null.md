@@ -85,4 +85,5 @@ MSYS2 的最新版本（2024+）已部分修复此问题，但建议仍采用方
 
 ## 参考
 
-- [MSYS 路径转换](/pitfalls/msys/path-conversion)
+- [[msys-backslash-swallowed]] — MSYS 下反斜杠被吞
+- [[msys-utf8-to-gbk]] — MSYS 编码问题
