@@ -58,16 +58,33 @@ created: 2026-07-22
 
 ## 使用方式
 
+### 安装
+
+```bash
+git clone https://github.com/bsawang/win-ai-pit.git
+cd win-ai-pit
+pip install -e .
+python scripts/setup.py
+```
+
 ### 启动 MCP Server
 
 ```bash
-cd E:\work\ai\win-ai-pit
-
-# 1. 重建索引
-python -c "from pyrite.config import load_config; from pyrite.storage.database import PyriteDB; from pyrite.storage.index import IndexManager; c=load_config(); d=PyriteDB(c.settings.index_path); i=IndexManager(d); [i.index_kb(kb.name) for kb in c.knowledge_bases]; d.close()"
-
-# 2. 启动 MCP Server
+# 直接启动
 python -m pyrite.server.mcp_server --tier admin
+
+# 或用 Make
+make start
+```
+
+Windows 下也可以双击 `scripts/start-mcp.bat`。
+
+### 重建索引
+
+```bash
+python -c "from pyrite.config import load_config; from pyrite.storage.database import PyriteDB; from pyrite.storage.index import IndexManager; c=load_config(); d=PyriteDB(c.settings.index_path); i=IndexManager(d); [i.index_kb(kb.name) for kb in c.knowledge_bases]; d.close()"
+# 或用 Make
+make index
 ```
 
 ### MCP 工具
@@ -76,7 +93,7 @@ python -m pyrite.server.mcp_server --tier admin
 搜索已知坑。支持按工具、OS、严重程度过滤。
 
 #### record_pitfall
-记录新坑。自动去重（按标题/症状相似度匹配）。
+记录新坑。自动去重（按标题/症状相似度匹配），写文件后自动重建索引。
 
 ## 设计原则
 
