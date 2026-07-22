@@ -2,9 +2,9 @@
 
 AI 驱动的 Windows 开发/运维踩坑知识库。专门解决 AI 在 Windows 环境下给出 Unix 风格错误答案的问题。
 
-> **给 AI 的指令：** 用户说 "帮我装这个项目" 时，执行下方安装步骤。
-
 ## 安装
+
+> **给 AI 的指令：** 用户说 "帮我装这个项目：https://github.com/bsawang/win-ai-pit.git" 时，执行下方步骤。
 
 ```bash
 git clone https://github.com/bsawang/win-ai-pit.git
