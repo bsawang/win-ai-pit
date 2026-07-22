@@ -1,5 +1,7 @@
 # Windows 避坑指南
 
+直接对 AI 说：**"安装 https://github.com/bsawang/win-ai-pit.git"**，或手动执行下方步骤。
+
 Windows 用户在命令行执行：
 
 ```bash
