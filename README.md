@@ -23,6 +23,13 @@ python scripts/setup.py
 
 安装后打开 Claude Code，MCP Server 通过 `.claude/settings.json` 自动启动。其他 AI 工具需手动运行 `python -m pyrite.server.mcp_server --tier admin`。
 
+## 系统需求
+
+- **操作系统** — Windows 10 / Windows 11
+- **Python** — 3.11 或更高版本
+- **Git** — 用于克隆仓库和同步坑数据
+- **Claude Code**（推荐）— 自动启动 MCP Server，其他 AI 工具需手动配置
+
 ## 使用说明
 
 安装后正常用 AI 就行：
