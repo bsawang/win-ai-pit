@@ -142,6 +142,19 @@ def cmd_start(args):
     mcp_main()
 
 
+def cmd_log(args):
+    """View activity log."""
+    log_file = _get_data_dir() / "data" / "activity.log"
+    if not log_file.exists():
+        print("暂无活动记录")
+        return
+    lines = log_file.read_text(encoding="utf-8").strip().split("\n")
+    # Show last N lines (default 20)
+    n = args.n or 20
+    for line in lines[-n:]:
+        print(line)
+
+
 def cmd_index(args):
     """Rebuild index from data directory."""
     from pyrite.config import load_config
@@ -170,6 +183,8 @@ def main():
     start_p = sub.add_parser("start", help="启动 MCP Server（stdio 模式）")
     start_p.add_argument("--tier", choices=["read", "write", "admin"], default="admin")
     sub.add_parser("index", help="重建索引")
+    log_p = sub.add_parser("log", help="查看活动日志")
+    log_p.add_argument("-n", type=int, default=20, help="显示行数")
 
     args = parser.parse_args()
 
@@ -179,6 +194,8 @@ def main():
         cmd_start(args)
     elif args.command == "index":
         cmd_index(args)
+    elif args.command == "log":
+        cmd_log(args)
 
 
 if __name__ == "__main__":

@@ -1,5 +1,6 @@
 """Windows Pitfalls plugin for pyrite."""
 
+import datetime
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -146,6 +147,19 @@ class WindowsPitfallsPlugin:
         return tools
 
     @staticmethod
+    def _log_activity(kind: str, detail: str):
+        """Append a line to the activity log (~/.windows-pitfalls/data/activity.log)."""
+        try:
+            log_dir = Path.home() / ".windows-pitfalls" / "data"
+            log_dir.mkdir(parents=True, exist_ok=True)
+            ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            line = f"{ts} | {kind} | {detail}\n"
+            with open(log_dir / "activity.log", "a", encoding="utf-8") as f:
+                f.write(line)
+        except Exception:
+            pass
+
+    @staticmethod
     def _get_repo_root(config) -> Path:
         """Get the git repo root (KB path)."""
         return config.knowledge_bases[0].path
@@ -260,6 +274,7 @@ class WindowsPitfallsPlugin:
                 filtered.append(r)
 
             text = _json.dumps(filtered[:limit], ensure_ascii=False, default=str, indent=2)
+            self._log_activity("search", f"q=\"{query}\" hits={len(filtered)}")
             return {"content": [{"type": "text", "text": text}]}
 
         finally:
@@ -384,14 +399,18 @@ class WindowsPitfallsPlugin:
                         limit=5,
                     )
 
-            # Fallback 2: list recent entries as last resort
+            # Fallback 2: list recent entries as last resort (via direct DB query)
             if not existing:
-                existing = service.search(
-                    "",
-                    kb_name="windows-pitfalls",
-                    entry_type="windows_pitfall",
-                    limit=5,
-                )
+                from pyrite.models.base import Entry
+                try:
+                    rows = db._raw_conn.execute(
+                        "SELECT e.* FROM entry e WHERE e.kb_name = ? AND e.entry_type = ? "
+                        "ORDER BY e.rowid DESC LIMIT 5",
+                        ("windows-pitfalls", "windows_pitfall"),
+                    ).fetchall()
+                    existing = [dict(r) for r in rows]
+                except Exception:
+                    existing = []
 
             for r in existing:
                 meta_raw = r.get("metadata", {})
@@ -422,6 +441,7 @@ class WindowsPitfallsPlugin:
                         "existing_entry_id": meta.get("id", ""),
                         "existing_title": existing_title,
                     }
+                    self._log_activity("record", f"status=skipped title=\"{title}\" match=\"{existing_title}\"")
                     return {"content": [{"type": "text", "text": json.dumps(result, ensure_ascii=False)}]}
 
             # === No duplicate found, create the entry ===
@@ -481,6 +501,7 @@ class WindowsPitfallsPlugin:
             file_rel = f"pitfalls/{entry_id}.md"
             self._git_commit_and_push(repo_path, file_rel, title)
 
+            self._log_activity("record", f"status=created title=\"{title}\" id={entry_id}")
             result = {
                 "status": "created",
                 "entry_id": entry_id,
