@@ -23,6 +23,8 @@ python scripts/setup.py
 
 安装后打开 Claude Code，MCP Server 通过 `.claude/settings.json` 自动启动。其他 AI 工具需手动运行 `python -m pyrite.server.mcp_server --tier admin`。
 
+## 使用说明
+
 安装后使用时：
 
 - **你负责** — 遇到 Windows 问题直接问 AI，不用管知识库
