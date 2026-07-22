@@ -1,6 +1,7 @@
 """CLI for Windows Pitfalls — system-level MCP server management."""
 
 import argparse
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -46,7 +47,19 @@ def cmd_init(args):
         if overwrite != "y":
             print("跳过")
             return
-        shutil.rmtree(data_dir)
+        # Try removing .git first to avoid locks on Windows
+        git_dir = data_dir / ".git"
+        if git_dir.exists():
+            subprocess.run(
+                ["git", "reset", "--hard"], cwd=data_dir,
+                capture_output=True, timeout=10,
+            )
+            shutil.rmtree(git_dir, ignore_errors=True)
+        shutil.rmtree(data_dir, ignore_errors=True)
+        if data_dir.exists():
+            print("错误: 无法删除旧数据目录，请手动删除后重试")
+            print(f"  {data_dir}")
+            sys.exit(1)
 
     # Clone repo as data directory (keep .git for sync capability)
     print(f"克隆仓库到 {data_dir} ...")
