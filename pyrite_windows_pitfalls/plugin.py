@@ -1,5 +1,6 @@
 """Windows Pitfalls plugin for pyrite."""
 
+from pathlib import Path
 from typing import Any, ClassVar
 
 from pyrite.plugins.capabilities import Capability
@@ -144,6 +145,57 @@ class WindowsPitfallsPlugin:
 
         return tools
 
+    @staticmethod
+    def _get_repo_root(config) -> Path:
+        """Get the git repo root (KB path)."""
+        return config.knowledge_bases[0].path
+
+    @staticmethod
+    def _git_run(args: list[str], repo_path: Path) -> tuple[bool, str]:
+        """Run a git command. Returns (success, stdout)."""
+        try:
+            import subprocess
+            r = subprocess.run(
+                ["git"] + args, cwd=repo_path,
+                capture_output=True, text=True, timeout=30,
+            )
+            return r.returncode == 0, r.stdout.strip()
+        except Exception:
+            return False, ""
+
+    @staticmethod
+    def _git_try_sync(repo_path: Path) -> bool:
+        """git fetch → if new commits → pull. Returns True if pulled."""
+        ok, out = WindowsPitfallsPlugin._git_run(["remote"], repo_path)
+        if not ok or not out.strip():
+            return False
+        # Try lightweight fetch first
+        WindowsPitfallsPlugin._git_run(["fetch", "--depth", "1"], repo_path)
+        # Check if there are updates
+        ok, count = WindowsPitfallsPlugin._git_run(
+            ["rev-list", "--count", "HEAD..origin/HEAD"], repo_path
+        )
+        if ok and count.strip() and int(count.strip()) > 0:
+            ok, _ = WindowsPitfallsPlugin._git_run(["pull", "--ff-only"], repo_path)
+            return ok
+        return False
+
+    @staticmethod
+    def _git_commit_and_push(repo_path: Path, file_rel: str, title: str) -> bool:
+        """git add + commit + push. Fail silently if not a git repo."""
+        ok1, _ = WindowsPitfallsPlugin._git_run(["add", file_rel], repo_path)
+        if not ok1:
+            return False
+        ok2, _ = WindowsPitfallsPlugin._git_run(
+            ["commit", "-m", f"record: {title}"], repo_path
+        )
+        if not ok2:
+            return False
+        ok3, _ = WindowsPitfallsPlugin._git_run(["remote"], repo_path)
+        if ok3:
+            WindowsPitfallsPlugin._git_run(["push"], repo_path)
+        return True
+
     def _handle_search_pitfall(self, arguments: dict) -> dict:
         """Search for pitfalls matching the given criteria."""
         from pyrite.config import load_config
@@ -159,16 +211,28 @@ class WindowsPitfallsPlugin:
             severity = arguments.get("severity")
             limit = arguments.get("limit", 10)
 
-            # Search using pyrite's search service
+            # Sanitize query for FTS5 (handles > / - etc.)
             from pyrite.services.search_service import SearchService
+            sanitized = SearchService.sanitize_fts_query(query)
 
             service = SearchService(db)
-            results = service.search(
-                query,
-                kb_name="windows-pitfalls",
-                entry_type="windows_pitfall",
-                limit=limit,
-            )
+
+            def _search(q: str) -> list[dict]:
+                return service.search(
+                    q, kb_name="windows-pitfalls",
+                    entry_type="windows_pitfall", limit=limit,
+                )
+
+            results = _search(sanitized)
+
+            # If no results, try git fetch + pull + reindex + retry
+            if not results:
+                repo_path = self._get_repo_root(config)
+                if self._git_try_sync(repo_path):
+                    # Rebuild index after pull
+                    from pyrite.storage.index import IndexManager
+                    IndexManager(db, config).index_kb("windows-pitfalls")
+                    results = _search(sanitized)
 
             # Post-filter by tool/os/severity
             import json as _json
@@ -411,6 +475,11 @@ class WindowsPitfallsPlugin:
             from pyrite.storage.index import IndexManager
             indexer = IndexManager(db, config)
             indexed = indexer.index_kb("windows-pitfalls")
+
+            # Git commit + push (silent, best-effort)
+            repo_path = self._get_repo_root(config)
+            file_rel = f"pitfalls/{entry_id}.md"
+            self._git_commit_and_push(repo_path, file_rel, title)
 
             result = {
                 "status": "created",
