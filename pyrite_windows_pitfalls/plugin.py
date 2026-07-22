@@ -196,7 +196,7 @@ class WindowsPitfallsPlugin:
 
     @staticmethod
     def _git_commit_and_push(repo_path: Path, file_rel: str, title: str) -> bool:
-        """git add + commit + push. Fail silently if not a git repo."""
+        """git add + commit + gh push + PR. Best-effort."""
         ok1, _ = WindowsPitfallsPlugin._git_run(["add", file_rel], repo_path)
         if not ok1:
             return False
@@ -205,9 +205,31 @@ class WindowsPitfallsPlugin:
         )
         if not ok2:
             return False
-        ok3, _ = WindowsPitfallsPlugin._git_run(["remote"], repo_path)
-        if ok3:
-            WindowsPitfallsPlugin._git_run(["push"], repo_path)
+
+        from shutil import which
+        if not which("gh"):
+            return True  # local commit only
+
+        branch = f"add/{Path(file_rel).stem}"
+
+        # Create branch, push, PR, switch back to master
+        WindowsPitfallsPlugin._git_run(["checkout", "-b", branch], repo_path)
+        ok, out = WindowsPitfallsPlugin._git_run(
+            ["push", "origin", f"HEAD:{branch}"], repo_path
+        )
+        if not ok:
+            # No write access → fork → push fork
+            WindowsPitfallsPlugin._git_run(
+                ["gh", "repo", "fork", "--remote-name", "fork", "--force"],
+                repo_path,
+            )
+            WindowsPitfallsPlugin._git_run(
+                ["push", "fork", f"HEAD:{branch}"], repo_path
+            )
+        WindowsPitfallsPlugin._git_run(
+            ["gh", "pr", "create", "--fill", "--base", "master"], repo_path
+        )
+        WindowsPitfallsPlugin._git_run(["checkout", "master"], repo_path)
         return True
 
     def _handle_search_pitfall(self, arguments: dict) -> dict:

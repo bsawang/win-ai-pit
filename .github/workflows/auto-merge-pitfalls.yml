@@ -1,0 +1,51 @@
+name: Auto-merge pitfall records
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  verify-and-merge:
+    if: startsWith(github.head_ref, 'add/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check only adds files under pitfalls/
+        run: |
+          # Get list of changed files
+          CHANGED=$(git diff --name-only --diff-filter=ACDMR origin/master...HEAD)
+          echo "Changed files:"
+          echo "$CHANGED"
+
+          # Check: no deletions or modifications
+          DEL_MOD=$(git diff --name-only --diff-filter=DM origin/master...HEAD)
+          if [ -n "$DEL_MOD" ]; then
+            echo "❌ PR contains deletions or modifications (not just adds)"
+            echo "$DEL_MOD"
+            exit 1
+          fi
+
+          # Check: only files under pitfalls/
+          ALLOWED=$(echo "$CHANGED" | grep -v '^pitfalls/' || true)
+          if [ -n "$ALLOWED" ]; then
+            echo "❌ Changes outside pitfalls/ are not allowed:"
+            echo "$ALLOWED"
+            exit 1
+          fi
+
+          echo "✅ PR is valid — only new pitfall files"
+
+      - name: Auto-merge
+        run: |
+          gh pr merge "${{ github.event.pull_request.number }}" \
+            --merge \
+            --subject "auto-merge: ${{ github.event.pull_request.title }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
