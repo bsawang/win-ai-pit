@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Pyrite
+data/index
+.pyrite/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Temp
+*_desc.txt

@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "windows-pitfalls"
+version = "0.1.0"
+description = "Windows 避坑指南 — AI 驱动的 Windows 开发/运维踩坑知识库"
+license = {text = "MIT"}
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.11.0",
+    "python-dotenv>=1.0.1",
+    "PyYAML>=6.0.1",
+    "ruamel.yaml>=0.18.0",
+    "SQLAlchemy>=2.0.0",
+    "mcp>=1.0.0",
+]
+
+[project.optional-dependencies]
+server = [
+    "fastapi>=0.111.0",
+    "uvicorn[standard]>=0.30.1",
+    "slowapi>=0.1.9",
+    "httpx>=0.27.0",
+    "watchdog>=4.0.1",
+    "alembic>=1.13.0",
+]
+semantic = [
+    "sentence-transformers>=2.2.0",
+    "sqlite-vec>=0.1.0",
+]
+
+[project.entry-points."pyrite.plugins"]
+windows_pitfalls = "pyrite_windows_pitfalls.plugin:WindowsPitfallsPlugin"
+
+[tool.setuptools.packages.find]
+include = ["pyrite*", "pyrite_windows_pitfalls*"]
+
+[tool.setuptools.package-data]
+pyrite = ["**/*.yaml", "**/*.html", "**/*.py"]
+pyrite_windows_pitfalls = ["**/*.py"]

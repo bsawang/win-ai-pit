@@ -1,0 +1,631 @@
+"""
+KB Repository - File-based Storage
+
+Handles reading and writing entries to/from markdown files.
+Each KB is a directory of markdown files with YAML frontmatter.
+"""
+
+import logging
+from collections.abc import Iterator
+from datetime import UTC, datetime
+from pathlib import Path
+
+from ..config import KBConfig
+from ..exceptions import (
+    EntryNotFoundError,
+    FrontmatterError,
+    KBReadOnlyError,
+    ValidationError,
+)
+from ..migrations import get_migration_registry, load_plugin_migrations
+from ..models import Entry, EventEntry
+from ..models.collection import CollectionEntry
+from ..models.core_types import entry_from_frontmatter
+from ..schema import CORE_TYPES
+from ..utils.yaml import load_yaml_file
+
+logger = logging.getLogger(__name__)
+
+
+class KBRepository:
+    """
+    File-based repository for a single knowledge base.
+
+    Handles:
+    - Loading entries from markdown files
+    - Saving entries to markdown files
+    - Listing/iterating over entries
+    - File path management
+    """
+
+    def __init__(self, kb_config: KBConfig):
+        self.config = kb_config
+        self.path = kb_config.path
+        self.kb_type = kb_config.kb_type
+        self.name = kb_config.name
+
+    def _get_entry_class(self) -> type:
+        """Get the default entry class for loading files."""
+        # All files are loaded by parsing frontmatter and dispatching
+        # to the correct type based on entry_type field
+        return Entry
+
+    def _load_entry(self, file_path: Path) -> Entry:
+        """Load an entry from a file, dispatching to the correct type."""
+        # Try to load with type-aware parsing
+        try:
+            # Read frontmatter to determine type
+            text = file_path.read_text(encoding="utf-8")
+            from pyrite.utils.yaml import load_yaml
+
+            if text.startswith("---\n") or text.startswith("---\r\n"):
+                # Find the closing `---` delimiter at the start of a line.
+                # Simple text.find("---", 3) matches `---` inside quoted
+                # frontmatter values like "Rental Property --- Chicago, IL".
+                search_start = 3
+                end = -1
+                while True:
+                    hit = text.find("\n---", search_start)
+                    if hit < 0:
+                        break
+                    delim_end = hit + 4
+                    if delim_end == len(text) or text[delim_end] in ("\n", "\r"):
+                        end = hit + 1
+                        break
+                    search_start = hit + 1
+                if end > 0:
+                    fm = load_yaml(text[3:end])
+                    if fm and isinstance(fm, dict):
+                        body = text[end + 3 :].strip()
+                        # Defensive: strip duplicated frontmatter fields from body start
+                        # (e.g., "type: timeline_event" leaked into body by migration error)
+                        if body and ":" in body.split("\n", 1)[0]:
+                            first_line = body.split("\n", 1)[0].strip()
+                            key = first_line.split(":", 1)[0].strip()
+                            if key in fm:
+                                logger.debug(
+                                    "Stripped duplicated frontmatter field '%s' from body of %s",
+                                    key, file_path,
+                                )
+                                body = body.split("\n", 1)[1].strip() if "\n" in body else ""
+                        fm = self._maybe_migrate(fm)
+                        fm["body"] = body
+                        fm["file_path"] = str(file_path)
+                        entry = entry_from_frontmatter(fm, body)
+                        # Preserve references in metadata if present in frontmatter
+                        # (typed entries drop unknown fields during from_frontmatter)
+                        if "references" in fm and fm["references"]:
+                            if not hasattr(entry, "metadata") or not entry.metadata:
+                                entry.metadata = {}
+                            if "references" not in entry.metadata:
+                                entry.metadata["references"] = fm["references"]
+                        return entry
+
+            # Fallback: try EventEntry.load for backward compat
+            return EventEntry.load(file_path)
+        except FrontmatterError:
+            # Malformed YAML: the EventEntry fallback re-parses the same bytes
+            # and would fail identically, so re-raise rather than retry.
+            logger.warning("Entry load failed for %s: malformed frontmatter", file_path)
+            raise
+        except Exception as e:
+            # Log a one-line warning instead of a full traceback. Per-file
+            # tracebacks spam the operator during bulk sync (cascade-research
+            # drafts hit ~13 of these every operation). The underlying parse
+            # error is wrapped into FrontmatterError on re-raise from
+            # EventEntry.load if the cause is YAML; sync_incremental's
+            # malformed-summary captures it. Tier A 1080.
+            logger.warning(
+                "Entry load failed for %s, trying EventEntry fallback: %s",
+                file_path,
+                e,
+            )
+            return EventEntry.load(file_path)
+
+    def _maybe_migrate(self, fm: dict) -> dict:
+        """Apply pending schema migrations to frontmatter if needed."""
+        if not hasattr(self.config, "kb_yaml_path") or not self.config.kb_yaml_path.exists():
+            return fm
+
+        entry_type = fm.get("type", "")
+        if not entry_type:
+            return fm
+
+        type_schema = self.config.kb_schema.get_type_schema(entry_type)
+        if not type_schema or type_schema.version == 0:
+            return fm
+
+        entry_sv = int(fm.get("_schema_version", 0))
+        if entry_sv >= type_schema.version:
+            return fm
+
+        load_plugin_migrations()
+        registry = get_migration_registry()
+        if not registry.has_migrations(entry_type):
+            return fm
+
+        try:
+            fm = registry.apply(entry_type, fm, entry_sv, type_schema.version)
+        except ValueError:
+            logger.warning(
+                "Migration failed for %s (v%d -> v%d)",
+                entry_type,
+                entry_sv,
+                type_schema.version,
+                exc_info=True,
+            )
+
+        return fm
+
+    def _get_file_path(self, entry_id: str, subdir: str | None = None) -> Path:
+        """Get file path for an entry."""
+        if subdir:
+            return self.path / subdir / f"{entry_id}.md"
+        return self.path / f"{entry_id}.md"
+
+    def _resolve_file_path(self, entry: Entry, subdir: str | None) -> Path:
+        """Resolve the file path for an entry, respecting file_pattern if set."""
+        schema = self.config.kb_schema
+        type_schema = schema.get_type_schema(entry.entry_type)
+        if type_schema:
+            custom_name = type_schema.resolve_filename(entry)
+            if custom_name:
+                # file_pattern provides the full filename (with .md)
+                if subdir:
+                    return self.path / subdir / custom_name
+                return self.path / custom_name
+        return self._get_file_path(entry.id, subdir)
+
+    def _infer_subdir(self, entry: Entry) -> str | None:
+        """Infer subdirectory for entries based on type.
+
+        Checks (in order):
+        1. KB schema (kb.yaml types with subdirectory)
+        2. Core types (built-in type → subdirectory mapping)
+        3. Plugin subtypes (walk MRO to find parent core type)
+        """
+        entry_type = entry.entry_type
+
+        # Check KB schema first — covers kb.yaml-defined types with subdirectory
+        # Note: subdirectory="" means "KB root" (override core type default),
+        # while no subdirectory key at all means "use default"
+        schema = self.config.kb_schema
+        type_schema = schema.get_type_schema(entry_type)
+        if type_schema and type_schema.subdirectory is not None:
+            if type_schema.subdirectory == "":
+                return None  # Explicit override: place in KB root
+            return type_schema.resolve_subdirectory(entry)
+
+        # Check core types for subdirectory mapping
+        if entry_type in CORE_TYPES:
+            return CORE_TYPES[entry_type].get("subdirectory")
+
+        # Plugin subtype: walk MRO to find the parent core type's subdirectory
+        from ..models.core_types import ENTRY_TYPE_REGISTRY
+
+        for core_name, core_cls in ENTRY_TYPE_REGISTRY.items():
+            if isinstance(entry, core_cls) and core_name in CORE_TYPES:
+                return CORE_TYPES[core_name].get("subdirectory")
+        return None
+
+    def exists(self, entry_id: str) -> bool:
+        """Check if an entry exists."""
+        return self.find_file(entry_id) is not None
+
+    def find_file(self, entry_id: str) -> Path | None:
+        """Find the file path for an entry.
+
+        Searches by filename first (fast), then falls back to scanning
+        frontmatter IDs (handles cases where filename != entry ID).
+        """
+        # Check root by filename
+        root_path = self.path / f"{entry_id}.md"
+        if root_path.exists():
+            return root_path
+
+        # Check all subdirectories recursively by filename
+        filename = f"{entry_id}.md"
+        for match in self.path.rglob(filename):
+            if not any(part.startswith(".") for part in match.relative_to(self.path).parts):
+                return match
+
+        # Check for collection entries (collection-<folder_name>)
+        if entry_id.startswith("collection-"):
+            folder_name = entry_id[len("collection-") :]
+            for subdir in self.path.rglob(folder_name):
+                if subdir.is_dir():
+                    yaml_path = subdir / "__collection.yaml"
+                    if yaml_path.exists():
+                        return yaml_path
+
+        # Fallback: scan frontmatter IDs (handles filename != entry ID)
+        # This is slower but catches entries like ADRs where the file is
+        # "0025-release-workflow.md" but the ID is "adr-0025"
+        from pyrite.utils.yaml import load_yaml
+        for md_file in self.path.rglob("*.md"):
+            if any(part.startswith(".") or part.startswith("_") for part in md_file.relative_to(self.path).parts):
+                continue
+            try:
+                text = md_file.read_text(encoding="utf-8")
+                if text.startswith("---"):
+                    end = text.find("---", 3)
+                    if end > 0:
+                        fm = load_yaml(text[3:end])
+                        if isinstance(fm, dict) and fm.get("id") == entry_id:
+                            return md_file
+            except Exception:
+                continue
+
+        return None
+
+    def load(self, entry_id: str) -> Entry | None:
+        """Load an entry by ID."""
+        file_path = self.find_file(entry_id)
+        if not file_path:
+            return None
+
+        try:
+            entry = self._load_entry(file_path)
+            entry.kb_name = self.name
+            entry.file_path = file_path
+            return entry
+        except Exception as e:
+            logger.warning("Could not load %s: %s", file_path, e)
+            return None
+
+    def save(self, entry: Entry, subdir: str | None = None) -> Path:
+        """
+        Save an entry to file.
+
+        Args:
+            entry: The entry to save
+            subdir: Optional subdirectory (auto-inferred if not provided)
+
+        Returns:
+            Path to the saved file
+        """
+        if self.config.read_only:
+            raise KBReadOnlyError(f"KB '{self.name}' is read-only")
+
+        if subdir is None:
+            subdir = self._infer_subdir(entry)
+
+        # Check for custom file_pattern in the type schema
+        file_path = self._resolve_file_path(entry, subdir)
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Stamp current schema version on save
+        if hasattr(self.config, "kb_yaml_path") and self.config.kb_yaml_path.exists():
+            type_schema = self.config.kb_schema.get_type_schema(entry.entry_type)
+            if type_schema and type_schema.version > 0:
+                entry._schema_version = type_schema.version
+
+        entry.updated_at = datetime.now(UTC)
+        entry.save(file_path)
+        entry.kb_name = self.name
+        entry.file_path = file_path
+
+        return file_path
+
+    def delete(self, entry_id: str) -> bool:
+        """Delete an entry file. Returns True if deleted."""
+        if self.config.read_only:
+            raise KBReadOnlyError(f"KB '{self.name}' is read-only")
+
+        file_path = self.find_file(entry_id)
+        if file_path and file_path.exists():
+            file_path.unlink()
+            return True
+        return False
+
+    # ---------------------------------------------------------------
+    # Rename — Tier A r1700. The smallest useful slice: same-KB file
+    # rename + frontmatter id rewrite + wikilink rewrite. Cross-KB
+    # rewrite, redirect-stub creation, and the `move` (subdir-change)
+    # variant are filed as r1700 follow-ups.
+    # ---------------------------------------------------------------
+
+    def rename(
+        self,
+        old_id: str,
+        new_id: str,
+        *,
+        update_links: bool = True,
+        dry_run: bool = False,
+    ) -> dict:
+        """Rename an entry: move file, rewrite frontmatter id, rewrite
+        all in-KB wikilinks.
+
+        Args:
+            old_id: Current entry id.
+            new_id: Target entry id. Must not already exist.
+            update_links: When True (default), rewrite ``[[<old_id>]]``
+                and ``[[<old_id>|alias]]`` wikilinks in every entry
+                body in this KB. When False, only the renamed file
+                changes — references stay dangling (rarely useful,
+                kept for parity with the ticket spec).
+            dry_run: When True, return what would happen without
+                touching the filesystem.
+
+        Returns:
+            Plan/result dict with keys ``renamed`` (bool), ``old_id``,
+            ``new_id``, ``files_rewritten``, ``links_rewritten``,
+            ``dry_run``.
+
+        Raises:
+            EntryNotFoundError: if ``old_id`` doesn't exist in this KB.
+            ValidationError: if ``new_id`` already exists.
+            KBReadOnlyError: if the KB is read-only.
+        """
+        if self.config.read_only and not dry_run:
+            raise KBReadOnlyError(f"KB '{self.name}' is read-only")
+
+        # Same-id is a no-op — callers can script rename(x, x) safely.
+        if old_id == new_id:
+            return {
+                "renamed": False,
+                "old_id": old_id,
+                "new_id": new_id,
+                "files_rewritten": 0,
+                "links_rewritten": 0,
+                "dry_run": dry_run,
+            }
+
+        src = self.find_file(old_id)
+        if not src or not src.exists():
+            raise EntryNotFoundError(
+                f"Entry '{old_id}' not found in KB '{self.name}'"
+            )
+
+        if self.find_file(new_id):
+            raise ValidationError(
+                f"Cannot rename '{old_id}' to '{new_id}': target already exists "
+                f"in KB '{self.name}'"
+            )
+
+        # Plan the link rewrite. We scan every body once and substitute
+        # `[[<old_id>]]` and `[[<old_id>|...]]`. Substring matches at
+        # arbitrary positions are NOT touched (the spec calls for exact
+        # wikilink-id match only).
+        files_rewritten = 0
+        links_rewritten = 0
+        body_rewrites: list[tuple[Path, str]] = []  # (path, new_text)
+
+        if update_links:
+            import re
+
+            # Build the two patterns so we can both COUNT and REPLACE.
+            # Group 1 of `aliased` is the alias text we preserve.
+            bare = re.compile(rf"\[\[{re.escape(old_id)}\]\]")
+            aliased = re.compile(rf"\[\[{re.escape(old_id)}\|([^\]]*)\]\]")
+            new_bare = f"[[{new_id}]]"
+
+            for md_file in self.list_files():
+                # The source file itself will get a fresh write below;
+                # don't pre-count its body or double-write.
+                if md_file.resolve() == src.resolve():
+                    continue
+                try:
+                    text = md_file.read_text(encoding="utf-8")
+                except OSError:
+                    continue
+                count = len(bare.findall(text)) + len(aliased.findall(text))
+                if count == 0:
+                    continue
+                new_text = bare.sub(new_bare, text)
+                new_text = aliased.sub(
+                    lambda m, _n=new_id: f"[[{_n}|{m.group(1)}]]", new_text
+                )
+                files_rewritten += 1
+                links_rewritten += count
+                body_rewrites.append((md_file, new_text))
+
+        if dry_run:
+            return {
+                "renamed": True,
+                "old_id": old_id,
+                "new_id": new_id,
+                "files_rewritten": files_rewritten,
+                "links_rewritten": links_rewritten,
+                "dry_run": True,
+            }
+
+        # Execute. Rewrite-other-files first so a failure leaves the
+        # rename incomplete rather than orphaned wikilinks against a
+        # missing source.
+        for path, new_text in body_rewrites:
+            path.write_text(new_text, encoding="utf-8")
+
+        # Load the source entry, rewrite its id, save under new id,
+        # delete old file. Using load+save preserves frontmatter shape
+        # via the model layer instead of doing a regex on the source's
+        # own YAML.
+        entry = self._load_entry(src)
+        entry.id = new_id
+        # File pattern in some plugin schemas can pull subdir from id;
+        # keep the entry in the same subdir it lived in by saving with
+        # the explicit relative subdir of the old file.
+        rel = src.parent.relative_to(self.path)
+        subdir = str(rel) if str(rel) != "." else None
+        self.save(entry, subdir=subdir)
+
+        # Delete the old file only AFTER the new one is on disk.
+        if src.exists():
+            src.unlink()
+
+        return {
+            "renamed": True,
+            "old_id": old_id,
+            "new_id": new_id,
+            "files_rewritten": files_rewritten,
+            "links_rewritten": links_rewritten,
+            "dry_run": False,
+        }
+
+    def list_files(self) -> Iterator[Path]:
+        """Iterate over all markdown files in the KB."""
+        for md_file in self.path.rglob("*.md"):
+            # Skip hidden directories and files (check relative path only,
+            # so a KB stored under e.g. ~/.pyrite/kbs/ is not skipped)
+            rel = md_file.relative_to(self.path)
+            if any(part.startswith(".") for part in rel.parts):
+                continue
+            # Skip template scaffold files in _templates directories
+            if "_templates" in rel.parts:
+                continue
+            # Skip README files (case-insensitive) — they lack frontmatter
+            if md_file.name.lower() == "readme.md":
+                continue
+            yield md_file
+
+    def list_all_files(self) -> Iterator[Path]:
+        """Iterate over all entry file paths (md + collection yaml) without parsing."""
+        yield from self.list_files()
+        for yaml_file in self.path.rglob("__collection.yaml"):
+            if any(part.startswith(".") for part in yaml_file.parts):
+                continue
+            yield yaml_file
+
+    def load_entry_from_file(self, file_path: Path) -> Entry:
+        """Load and parse a single entry from a file path.
+
+        Handles both markdown entries and __collection.yaml files.
+        Raises on parse failure.
+        """
+        if file_path.name == "__collection.yaml":
+            entry = self._load_collection(file_path)
+        else:
+            entry = self._load_entry(file_path)
+        entry.kb_name = self.name
+        entry.file_path = file_path
+        return entry
+
+    def list_entries(self) -> Iterator[tuple[Entry, Path]]:
+        """Iterate over all entries in the KB."""
+        for file_path in self.list_files():
+            try:
+                entry = self._load_entry(file_path)
+                entry.kb_name = self.name
+                entry.file_path = file_path
+                yield entry, file_path
+            except Exception as e:
+                logger.warning("Could not parse %s: %s", file_path, e)
+                continue
+
+        # Discover __collection.yaml files
+        for yaml_file in self.path.rglob("__collection.yaml"):
+            if any(part.startswith(".") for part in yaml_file.parts):
+                continue
+            try:
+                entry = self._load_collection(yaml_file)
+                entry.kb_name = self.name
+                entry.file_path = yaml_file
+                yield entry, yaml_file
+            except Exception as e:
+                logger.warning("Could not parse collection %s: %s", yaml_file, e)
+                continue
+
+    def _load_collection(self, yaml_file: Path) -> CollectionEntry:
+        """Load a CollectionEntry from a __collection.yaml file."""
+        data = load_yaml_file(yaml_file)
+        folder_path = str(yaml_file.parent.relative_to(self.path))
+        return CollectionEntry.from_collection_yaml(data, folder_path)
+
+    def count(self) -> int:
+        """Count total entries in the KB."""
+        md_count = sum(1 for _ in self.list_files())
+        yaml_count = sum(
+            1
+            for f in self.path.rglob("__collection.yaml")
+            if not any(part.startswith(".") for part in f.parts)
+        )
+        return md_count + yaml_count
+
+    def search_files(self, query: str) -> Iterator[tuple[Entry, Path]]:
+        """
+        Simple file-based search (fallback when DB not indexed).
+
+        For production use, prefer PyriteDB.search() which uses FTS5.
+        """
+        query_lower = query.lower()
+        for file_path in self.list_files():
+            try:
+                content = file_path.read_text(encoding="utf-8")
+                if query_lower in content.lower():
+                    entry = self._load_entry(file_path)
+                    entry.kb_name = self.name
+                    entry.file_path = file_path
+                    yield entry, file_path
+            except Exception:
+                logger.warning("Skipping unreadable entry: %s", file_path, exc_info=True)
+                continue
+
+    def get_by_tag(self, tag: str) -> Iterator[Entry]:
+        """Get entries with a specific tag."""
+        for entry, _ in self.list_entries():
+            if tag in entry.tags:
+                yield entry
+
+    def get_by_date_range(self, date_from: str, date_to: str) -> Iterator[Entry]:
+        """Get events within a date range."""
+        for entry, _ in self.list_entries():
+            if isinstance(entry, EventEntry) and entry.date:
+                if date_from <= entry.date <= date_to:
+                    yield entry
+
+    def validate_all(self) -> list[tuple[Path, list[str]]]:
+        """Validate all entries. Returns list of (path, errors) for invalid entries."""
+        invalid = []
+        for entry, file_path in self.list_entries():
+            errors = entry.validate()
+            if errors:
+                invalid.append((file_path, errors))
+        return invalid
+
+
+class MultiKBRepository:
+    """
+    Repository manager for multiple KBs.
+
+    Provides unified access to multiple KBRepositories.
+    """
+
+    def __init__(self, kb_configs: list[KBConfig]):
+        self.repos = {config.name: KBRepository(config) for config in kb_configs}
+
+    def get_repo(self, kb_name: str) -> KBRepository | None:
+        """Get repository for a specific KB."""
+        return self.repos.get(kb_name)
+
+    def load(self, entry_id: str, kb_name: str | None = None) -> Entry | None:
+        """Load an entry, optionally searching across all KBs."""
+        if kb_name:
+            repo = self.get_repo(kb_name)
+            return repo.load(entry_id) if repo else None
+
+        # Search all KBs
+        for repo in self.repos.values():
+            entry = repo.load(entry_id)
+            if entry:
+                return entry
+        return None
+
+    def search(self, query: str, kb_name: str | None = None) -> Iterator[tuple[Entry, Path]]:
+        """Search across KBs."""
+        if kb_name:
+            repo = self.get_repo(kb_name)
+            if repo:
+                yield from repo.search_files(query)
+        else:
+            for repo in self.repos.values():
+                yield from repo.search_files(query)
+
+    def list_all_entries(self) -> Iterator[tuple[str, Entry, Path]]:
+        """List all entries across all KBs. Yields (kb_name, entry, path)."""
+        for kb_name, repo in self.repos.items():
+            for entry, path in repo.list_entries():
+                yield kb_name, entry, path
+
+    def count_all(self) -> dict:
+        """Count entries in all KBs."""
+        return {name: repo.count() for name, repo in self.repos.items()}

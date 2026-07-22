@@ -1,0 +1,35 @@
+name: windows-pitfalls
+kb_type: reference
+description: "Windows 避坑指南 — AI 可检索的 Windows 开发/运维踩坑知识库"
+
+guidelines:
+  contributing: "每个坑一条记录。症状+根因相同就是同一条坑，版本差异作为附属信息写在 body 里。"
+  quality: "必须包含症状、根因、解决三个部分。适用版本尽量精确。"
+  naming: "使用 kebab-case 作为文件 ID，与标题对应。"
+
+goals:
+  primary: "AI 在 Windows 环境下遇到问题时，能快速找到对应的坑和解决方法。"
+  success_criteria: "任何 AI 遇到 Windows 坑时，在 3 次搜索内命中正确的条目。"
+
+types:
+  windows_pitfall:
+    description: "Windows 开发/运维踩坑记录"
+    layout: document
+    guidelines: "前题（frontmatter）必须填充结构化字段用于 AI 匹配，正文（body）用 markdown 写详细内容。"
+    fields:
+      symptom:
+        type: text
+        required: true
+        description: "现象描述，AI 匹配和去重的关键依据"
+      root_cause:
+        type: text
+        description: "根因简述，配合 symptom 做去重比对"
+      solution:
+        type: text
+        description: "简要解决方案，详细步骤写在 body 中"
+      severity:
+        type: select
+        options: [critical, medium, low]
+        default: medium
+        description: "严重程度"
+    subdirectory: pitfalls/
