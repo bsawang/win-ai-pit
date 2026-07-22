@@ -1,31 +1,40 @@
 # Windows 避坑指南
 
-直接对 AI 说：**"安装 https://github.com/bsawang/win-ai-pit.git"**，或手动执行下方步骤。
+AI 驱动的 Windows 开发/运维踩坑知识库。专门解决 AI 在 Windows 环境下给出 Unix 风格错误答案的问题。
 
-Windows 用户在命令行执行：
+> **给 AI 的指令：** 用户说 "帮我装这个项目" 时，执行下方安装步骤。
+
+## 安装
 
 ```bash
 git clone https://github.com/bsawang/win-ai-pit.git
 cd win-ai-pit
-install.bat
+
+# 一键安装（Windows 用户也可双击 install.bat）
+pip install -e .
+python scripts/setup.py
 ```
 
-或手动按下方步骤操作。
+安装后打开 Claude Code，MCP Server 通过 `.claude/settings.json` 自动启动。其他 AI 工具需手动运行 `python -m pyrite.server.mcp_server --tier admin`。
 
-AI 驱动的 Windows 开发/运维踩坑知识库。专门解决 AI 在 Windows 环境下给出 Unix 风格错误答案的问题。
+## MCP 工具
 
-## 核心理念
+### search_pitfall
+搜索已知坑。支持按工具、OS、严重程度过滤。
 
-大部分 AI 模型的训练数据严重偏向 Linux/Unix 生态。当 AI 回答 Windows 问题时，会自然倾向于输出 Unix 风格的解决方案。本项目是一个"补偿层"——AI 在 Windows 环境下踩过的坑、被纠正过的知识，结构化记录下来，供以后任何 AI 检索复用。
+### record_pitfall
+记录新坑。自动去重（按标题/症状相似度匹配），写文件后自动重建索引。
 
 ## 架构
 
 ```
 AI（Claude Code / DeepSeek 等）
-    ↕ MCP 协议（stdio 或 HTTP）
+    ↕ MCP 协议（stdio）
 pyrite MCP Server（本地进程）
     ↕
 SQLite 索引（FTS5 全文搜索） ←→ Markdown 文件目录（Git 仓库）
+                                   ↕
+                               GitHub（多人同步）
 ```
 
 ### 组件
@@ -67,37 +76,6 @@ created: 2026-07-22
 ## 解决
 ...
 ```
-
-## 安装
-
-```bash
-git clone https://github.com/bsawang/win-ai-pit.git
-cd win-ai-pit
-
-# 一键安装（Windows 用户双击 install.bat 也行）
-pip install -e .
-python scripts/setup.py
-```
-
-## 使用
-
-### MCP Server（自动启动）
-
-配好 `.claude/settings.json`（已自带），Claude Code 打开项目时自动拉起。
-
-### MCP Server（手动启动）
-
-```bash
-python -m pyrite.server.mcp_server --tier admin
-```
-
-### MCP 工具
-
-#### search_pitfall
-搜索已知坑。支持按工具、OS、严重程度过滤。
-
-#### record_pitfall
-记录新坑。自动去重（按标题/症状相似度匹配），写文件后自动重建索引。
 
 ## 设计原则
 
