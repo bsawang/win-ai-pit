@@ -1,6 +1,14 @@
 # Windows 避坑指南
 
-直接对 AI 说：**"安装 https://github.com/bsawang/win-ai-pit.git"**，或手动按下方步骤操作。
+Windows 用户在命令行执行：
+
+```bash
+git clone https://github.com/bsawang/win-ai-pit.git
+cd win-ai-pit
+install.bat
+```
+
+或手动按下方步骤操作。
 
 AI 驱动的 Windows 开发/运维踩坑知识库。专门解决 AI 在 Windows 环境下给出 Unix 风格错误答案的问题。
 
