@@ -4,16 +4,7 @@ AI 驱动的 Windows 开发/运维踩坑知识库。专门解决 AI 在 Windows 
 
 ## 安装
 
-对你的 AI 说
-
-```
-pip install git+https://github.com/bsawang/win-ai-pit.git && windows-pitfalls init
-```
-
-或者按照下面的流程手动安装：
-
 ```bash
-# 一键安装（全局可用，不需要项目目录）
 pip install git+https://github.com/bsawang/win-ai-pit.git
 windows-pitfalls init
 ```
