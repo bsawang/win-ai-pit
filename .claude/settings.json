@@ -2,8 +2,8 @@
   "mcpServers": {
     "windows-pitfalls": {
       "description": "Windows 避坑指南 — search_pitfall / record_pitfall",
-      "command": "python",
-      "args": ["-m", "pyrite.server.mcp_server", "--tier", "admin"]
+      "command": "windows-pitfalls",
+      "args": ["start"]
     }
   }
 }

@@ -31,6 +31,9 @@ semantic = [
     "sqlite-vec>=0.1.0",
 ]
 
+[project.scripts]
+windows-pitfalls = "pyrite_windows_pitfalls.cli:main"
+
 [project.entry-points."pyrite.plugins"]
 windows_pitfalls = "pyrite_windows_pitfalls.plugin:WindowsPitfallsPlugin"
 

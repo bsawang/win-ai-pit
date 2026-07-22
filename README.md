@@ -13,15 +13,13 @@ AI 驱动的 Windows 开发/运维踩坑知识库。专门解决 AI 在 Windows 
 或者按照下面的流程手动安装：
 
 ```bash
-git clone https://github.com/bsawang/win-ai-pit.git
-cd win-ai-pit
-
-# 一键安装（Windows 用户也可双击 install.bat）
-pip install -e .
-python scripts/setup.py
+# 一键安装（全局可用，不需要项目目录）
+pip install git+https://github.com/bsawang/win-ai-pit.git
+windows-pitfalls init
 ```
 
-安装后打开 Claude Code，MCP Server 通过 `.claude/settings.json` 自动启动。其他 AI 工具需手动运行 `python -m pyrite.server.mcp_server --tier admin`。
+安装后打开 **任何项目目录** 的 Claude Code，MCP Server 自动启动。
+其他 AI 工具需手动运行 `windows-pitfalls start`。
 
 ## 系统需求
 

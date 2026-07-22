@@ -43,7 +43,7 @@ Windows 踩坑知识库 MVP 阶段。基于 pyrite + MCP，本地存储。已完
 ## 当前已知问题
 
 1. `search_pitfall` 没对特殊字符做 FTS5 转义，`>`, `/`, `-` 会报错
-2. `docs/` 下的 .md 无 frontmatter，索引时报错
+2. docs 文件已有 frontmatter，索引不再报错（fallback 为 note 类型）
 3. 只有 1 条坑
 
 ## 已确定的架构
