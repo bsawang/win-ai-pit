@@ -56,6 +56,32 @@ pip install windows-pitfalls     ← 运行模式（已安装到系统）
 ❌ 不要在两边的 master 上混着推，历史会交叉混乱
 ```
 
+## .gitignore 与运行时文件
+
+运行目录的 `~/.windows-pitfalls/data/` 下有 SQLite 索引文件：
+
+```
+data/index         ← 搜索索引（gitignored，自动生成）
+data/index-shm     ← SQLite 共享内存（gitignored）
+data/index-wal     ← SQLite WAL 日志（gitignored）
+data/activity.log  ← 活动日志（gitignored）
+```
+
+这些文件由 `windows-pitfalls init` 初始化和 `windows-pitfalls index` 重建，**不需要也不应该 git add/commit**。它们被 `.gitignore` 排除，git status 不会显示它们。
+
+如果误将 `data/` 下的文件 git add 了，用 `git restore data/` 撤销。
+
+## git pull 时的安全操作
+
+运行目录同步远程时，如果本地有未跟踪的索引文件（gitignored），`git pull` 不影响它们。但如果有跟踪文件被 stash：
+
+```bash
+cd ~/.windows-pitfalls
+# 安全同步方式
+git pull --rebase
+# 不需要处理 data/ 下的文件，它们全是 gitignored
+```
+
 ## 数据流示意图
 
 ```
@@ -69,4 +95,19 @@ pip install windows-pitfalls     ← 运行模式（已安装到系统）
          → gh PR → GitHub Actions auto-merge → master
          ↑
     所有操作在 ~/.windows-pitfalls/ 内完成，不涉及开发项目
+```
+
+## 一句话认知
+
+```
+开发项目（E:\）       = 造轮子的（写代码、改配置、写文档）
+运行目录（~/.windows-pitfalls） = 轮子跑起来的地方（python包安装后的产物 + 运行时数据）
+
+同一个 GitHub 仓库    = 轮子图纸和跑出来的数据放同一个架子上
+                      但造轮子和跑轮子不要同时往架子上扔东西
+
+日常记住：
+  写代码、改文档 → 在开发项目 → 推 master
+  记坑、数据同步 → 运行目录自动走 add/ 分支 → PR → 合入
+  互不 git 操作对方的东西
 ```
