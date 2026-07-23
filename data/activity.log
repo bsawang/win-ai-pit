@@ -1,0 +1,21 @@
+2026-07-23 12:41:19 | search | q="bat chcp 65001 GBK 编码 中文 乱码" hits=1
+2026-07-23 12:42:29 | record | status=created title=".bat chcp 65001 + GBK 编码冲突导致中文乱码" id=bat-chcp-65001-gbk
+2026-07-23 12:42:29 | record | status=skipped title="右键菜单同一软件在 HKLM 和 HKCU 双注册" match="右键菜单注册表位置大全"
+2026-07-23 12:42:31 | record | status=skipped title="同一软件在不同右键菜单位置使用不同键名" match="软件右键菜单由服务动态注册，改注册表后需停服务"
+2026-07-23 12:43:03 | record | status=created title="UltraEdit 文件夹菜单藏在 Folder\shellex 下" id=ultraedit-folder-shellex
+2026-07-23 12:43:23 | record | status=skipped title=".bat chcp 65001 与 GBK 编码冲突导致中文乱码" match=".bat chcp 65001 + GBK 编码冲突导致中文乱码"
+2026-07-23 12:43:26 | record | status=skipped title="右键菜单项藏在 Folder\shellex (UltraEdit)" match="UltraEdit 文件夹菜单藏在 Folder\shellex 下"
+2026-07-23 12:43:41 | search | q="chcp 65001" hits=1
+2026-07-23 12:43:43 | search | q="UltraEdit Folder shellex" hits=1
+2026-07-23 12:43:45 | search | q="HKLM HKCU 双注册" hits=3
+2026-07-23 13:01:06 | search | q="chcp 65001 GBK" hits=1
+2026-07-23 13:01:48 | search | q="测试包装脚本" hits=0
+2026-07-23 13:02:48 | search | q="右键菜单 清理 注册表" hits=0
+2026-07-23 13:03:02 | search | q="右键菜单" hits=0
+2026-07-23 13:03:44 | search | q="右键菜单" hits=0
+2026-07-23 13:04:53 | search | q="右键 菜单" hits=0
+2026-07-23 13:05:50 | search | q="右键" hits=0
+2026-07-23 13:05:59 | search | q="bat chcp" hits=1
+2026-07-23 13:06:20 | search | q="chcp" hits=1
+2026-07-23 13:06:34 | record | status=created title="测试记录" id=pitfall-906bdc3b
+2026-07-23 13:06:43 | search | q="测试记录" hits=1
