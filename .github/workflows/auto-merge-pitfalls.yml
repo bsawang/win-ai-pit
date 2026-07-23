@@ -45,7 +45,7 @@ jobs:
       - name: Auto-merge
         run: |
           gh pr merge "${{ github.event.pull_request.number }}" \
-            --merge \
+            --squash \
             --subject "auto-merge: ${{ github.event.pull_request.title }}"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
