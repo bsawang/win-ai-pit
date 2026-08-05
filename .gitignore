@@ -6,6 +6,9 @@ build/
 
 # Pyrite
 data/index
+data/index-shm
+data/index-wal
+data/activity.log
 .pyrite/
 
 # OS
