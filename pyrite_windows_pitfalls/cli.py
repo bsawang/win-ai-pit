@@ -100,9 +100,8 @@ settings:
     pyrite_cfg.write_text(config_content, encoding="utf-8")
     print(f"配置写入: {pyrite_cfg}")
 
-    # Build index
+    # Build index（数据仓库纯数据，无需把 data_dir 加入 sys.path；pyrite 从已安装包导入）
     print("重建索引...")
-    sys.path.insert(0, str(data_dir))
     from pyrite.config import load_config
     from pyrite.storage.database import PyriteDB
     from pyrite.storage.index import IndexManager
