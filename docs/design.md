@@ -53,6 +53,86 @@ pyrite 源码直接拷入本仓库，不通过 pip 依赖，不绑定 git submod
 **保留的核心模块：** server/（MCP）、models/（数据模型）、schema/（配置解析）、storage/（SQLite 索引）、services/（搜索）、plugins/（插件机制）
 **不保留：** web/（SvelteKit 前端）、extensions/（其他领域插件）、kb/（pyrite 自己的 KB）、docs/、tests/、migrations/
 
+## 部署架构：代码与数据分离
+
+> 状态：已决策，待实施（2026-08-07）
+
+### 项目特征与设计影响
+
+| 特征 | 设计影响 |
+|---|---|
+| 使用者是 AI 代理（无人值守） | 所有操作路径必须全自动；写回路径越短越不易断 |
+| 数据高频更新 / 代码低频更新 | 按更新频率分层，不让高频数据拖着低频代码 |
+| 跨项目部署 | 一次安装全局可用，数据目录独立于任何项目 |
+| 数据写回无人值守 | commit → push → PR → auto-merge 全自动，无需人工审核 |
+| 个人单用户、本地优先 | 全局单一可写副本即可满足核心场景 |
+
+### 决策：两个仓库，物理分离
+
+```
+win-ai-pit        ← 代码仓库（只读安装包）
+   pyrite 源码 + 插件（search_pitfall / record_pitfall）
+
+win-ai-pit-data   ← 数据仓库（唯一可写副本）
+   pitfalls/*.md + kb.yaml + .gitignore
+```
+
+原则：
+- 代码 = pip 安装产物（只读，无 `.git`，改动不产生分叉，`pip install --upgrade` 即还原）
+- 数据 = git clone（可写，全局唯一能提交的副本，且物理上不含代码）
+
+### 角色分流
+
+| 角色 | 持有副本 | 职责 |
+|---|---|---|
+| 开发者 | clone 代码仓库 | 改代码、推 master、写测试 |
+| 使用者 / AI | pip 装代码 + clone 数据 | 查坑、记坑（只写数据） |
+
+### 部署流程
+
+```
+安装：
+  pip install win-ai-pit           → 代码到 site-packages
+  git clone win-ai-pit-data ~/.windows-pitfalls
+  windows-pitfalls init            → 建索引
+
+日常（AI 无人值守）：
+  search_pitfall → 本地索引命中 → 给方案
+  record_pitfall → 数据仓库 add/ 分支 → PR → auto-merge
+
+更新：
+  代码（低频）：pip install --upgrade win-ai-pit
+  数据（高频）：git pull（record 前 fetch 轻量检查，有变化才 pull + 重建索引）
+```
+
+### 开发测试策略
+
+- 单元测试：代码仓库自带 `tests/fixtures/` 临时数据，不依赖数据仓库
+- 集成测试：连已安装 runtime 的真实数据（`~/.windows-pitfalls`），开发项目不 clone 数据仓库
+- 开发项目不持有第二个可写副本，避免与数据仓库状态纠缠
+
+### 数据写回路径设计原则
+
+- 单一 `add/` 分支 → PR → auto-merge，路径最短
+- 避免双分支冗余（现状：wrapper 外层分支 + 插件内部 `_git_commit_and_push` 各建一支）
+- auto-merge 校验数据合法性（frontmatter 完整、字段合法），无需「只增 pitfalls/」约束——整个仓库就是数据
+
+### 为什么不是现在的单仓库双副本
+
+现状 `windows-pitfalls init` = `git clone --depth 1` 整个仓库到数据目录，问题：
+
+1. 源码在数据目录冗余一份（运行实际用 site-packages 的 pip 包）
+2. 数据目录里存在可提交的源码副本 → 与开发项目 master 分叉风险（已实际发生）
+3. 代码/数据混仓 → 需要「只增 pitfalls/」补丁约束 PR（混仓的妥协产物）
+4. 边界靠纪律（`docs/dev-vs-runtime.md` 的「不混推」），无机制隔离
+
+### 迁移步骤（待实施）
+
+1. 新建 `win-ai-pit-data` 仓库，移入 `pitfalls/` + `kb.yaml`
+2. `~/.windows-pitfalls` 改 clone 数据仓库（旧 clone 移除源码）
+3. pip 包发布继续指向 `win-ai-pit`（代码仓库）
+4. 保留 `win-ai-pit` 为纯代码仓库
+
 ## 数据模型
 
 ### 核心概念

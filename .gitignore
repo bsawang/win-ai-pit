@@ -4,11 +4,8 @@ __pycache__/
 *.egg-info/
 build/
 
-# Pyrite
-data/index
-data/index-shm
-data/index-wal
-data/activity.log
+# Pyrite 运行时数据（代码仓库不持有，见 win-ai-pit-data）
+data/
 .pyrite/
 
 # OS
