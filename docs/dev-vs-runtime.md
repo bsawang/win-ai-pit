@@ -5,109 +5,49 @@ _note: true
 
 # 开发模式 vs 运行模式
 
-> 记录日期: 2026-07-23
+> 记录日期: 2026-07-23 · 更新: 2026-08-07（双仓库拆分后）
 
-## 两个本地目录，同一远程仓库
-
-本项目存在两个本地目录指向同一个 GitHub 仓库 (`github.com/bsawang/win-ai-pit`)，但用途不同，不可混淆。
+## 架构（代码/数据分离）
 
 ```
-E:\work\ai\win-ai-pit          ← 开发模式（源码目录）
-  ├── pyrite 源码
-  ├── CLI 和 MCP 工具代码
-  ├── 配置（kb.yaml）
-  ├── 文档（docs/）
-  └── 不应在此做数据推送
+win-ai-pit            ← 代码仓库（github.com/bsawang/win-ai-pit）
+  pyrite 源码 + 插件 + kb.yaml（schema 权威源，包内）
+  开发模式：clone 此仓库，改代码/文档，推 master
 
-pip install windows-pitfalls     ← 运行模式（已安装到系统）
-  ├── 命令: windows-pitfalls（PE 可执行文件）
-  ├── 数据目录: ~/.windows-pitfalls/
-  ├── MCP 调用: ~/.claude/scripts/pitfalls.sh 调的是这个
-  └── 数据同步在此进行
+win-ai-pit-data       ← 数据仓库（github.com/bsawang/win-ai-pit-data）
+  pitfalls/*.md 纯数据 + auto-merge workflow
+  运行模式：clone 到 ~/.windows-pitfalls，记坑/查坑，走 add/ 分支 PR → 合入
+
+两个仓库 remote 不同，物理隔离 —— 不再需要「不混推」纪律
 ```
 
 ## 操作边界
 
-| 操作 | 应在开发项目 (E:\) | 应在运行目录 (~/.windows-pitfalls) |
+| 操作 | 应在代码仓库 (E:\work\ai\win-ai-pit) | 应在运行目录 (~/.windows-pitfalls) |
 |------|:-:|:-:|
-| 改 pyrite 源码 | ✅ | ❌ |
-| 写设计文档 | ✅ | ❌ |
-| 更新 .claude.md | ✅ | ❌ |
-| 改 MCP 工具 | ✅ | ❌ |
-| 更新 auto-merge workflow | ✅ 改代码 | ❌ |
-| 重新打包发布 | ✅ `pip install -e .` | ⚠️ `pip install --upgrade` |
-| pitfalls.sh 记新坑 | ❌ | ✅ 自动化 add/ 分支 → PR → 合入 |
-| 知识库 git commit/push | ❌ | ✅ 自动或手动 |
-| 跑索引重建 | ❌ | ✅ `windows-pitfalls index` |
-| 查看活动日志 | ❌ | ✅ `windows-pitfalls log` |
+| 改 pyrite / 插件源码 | ✅ | ❌ |
+| 写文档（design/.claude.md/README） | ✅ | ❌ |
+| 改 kb.yaml（schema） | ✅（包内权威源，改完发布） | ❌（runtime 由 init 写入） |
+| 记坑 / 查坑 | ❌ | ✅（pitfalls.sh → 数据仓库 add/ 分支 → PR → 合入） |
+| 数据 git 同步 | ❌ | ✅（clone 数据仓库） |
+| 重建索引 | ❌ | ✅ `windows-pitfalls index` |
 
-## 为什么指向同一个远程
-
-- 开发项目推**代码**到 `master`
-- `pip install windows-pitfalls` 是从 GitHub 安装的
-- 运行目录 `~/.windows-pitfalls/` 是一个独立的 `git clone`，用于**数据同步**
-- 两边 `origin` 相同，但职责不同
-
-## 核心规则
+## 安装 / 部署
 
 ```
-⚠️ 开发项目：只推代码改动（master）
-⚠️ 运行目录：只推数据（自动走 add/ 分支 → PR → 合入）
-❌ 不要在两边的 master 上混着推，历史会交叉混乱
+pip install git+https://github.com/bsawang/win-ai-pit.git      # 代码（含 kb.yaml 模板）
+git clone https://github.com/bsawang/win-ai-pit-data.git ~/.windows-pitfalls   # 数据
+windows-pitfalls init       # 写入 kb.yaml（从包内）+ 建索引 + 配全局 MCP
 ```
 
-## .gitignore 与运行时文件
-
-运行目录的 `~/.windows-pitfalls/data/` 下有 SQLite 索引文件：
-
-```
-data/index         ← 搜索索引（gitignored，自动生成）
-data/index-shm     ← SQLite 共享内存（gitignored）
-data/index-wal     ← SQLite WAL 日志（gitignored）
-data/activity.log  ← 活动日志（gitignored）
-```
-
-这些文件由 `windows-pitfalls init` 初始化和 `windows-pitfalls index` 重建，**不需要也不应该 git add/commit**。它们被 `.gitignore` 排除，git status 不会显示它们。
-
-如果误将 `data/` 下的文件 git add 了，用 `git restore data/` 撤销。
-
-## git pull 时的安全操作
-
-运行目录同步远程时，如果本地有未跟踪的索引文件（gitignored），`git pull` 不影响它们。但如果有跟踪文件被 stash：
-
-```bash
-cd ~/.windows-pitfalls
-# 安全同步方式
-git pull --rebase
-# 不需要处理 data/ 下的文件，它们全是 gitignored
-```
-
-## 数据流示意图
-
-```
-您或 Claude
-    │
-    ├─ pitfalls.sh search → windows-pitfalls 命令 → ~/.windows-pitfalls/ 数据
-    │
-    └─ pitfalls.sh record → 写 .md → 重建索引
-         → git commit (add/ 分支)
-         → git push (add/ 分支)
-         → gh PR → GitHub Actions auto-merge → master
-         ↑
-    所有操作在 ~/.windows-pitfalls/ 内完成，不涉及开发项目
-```
+`kb.yaml` 是运行时文件：init 从代码包内复制到 `~/.windows-pitfalls/kb.yaml`，**不属于数据仓库**（已 gitignore）。
 
 ## 一句话认知
 
 ```
-开发项目（E:\）       = 造轮子的（写代码、改配置、写文档）
-运行目录（~/.windows-pitfalls） = 轮子跑起来的地方（python包安装后的产物 + 运行时数据）
-
-同一个 GitHub 仓库    = 轮子图纸和跑出来的数据放同一个架子上
-                      但造轮子和跑轮子不要同时往架子上扔东西
-
-日常记住：
-  写代码、改文档 → 在开发项目 → 推 master
-  记坑、数据同步 → 运行目录自动走 add/ 分支 → PR → 合入
-  互不 git 操作对方的东西
+代码仓库（win-ai-pit）  = 造轮子的（源码 + schema 定义）
+数据仓库（win-ai-pit-data） = 纯数据副本 + PR 写入口，无任何控制逻辑
+运行时（~/.windows-pitfalls）= clone 数据仓库，轮子跑起来的地方
 ```
+
+详见 `docs/design.md` 的「部署架构：代码与数据分离」。
