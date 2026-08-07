@@ -196,41 +196,17 @@ class WindowsPitfallsPlugin:
 
     @staticmethod
     def _git_commit_and_push(repo_path: Path, file_rel: str, title: str) -> bool:
-        """git add + commit + gh push + PR. Best-effort."""
+        """git add + commit。push/PR 由 pitfalls.sh 包装器统一负责（单一路径）。
+
+        不在本插件内建内部分支/PR —— 双分支冗余曾导致残留分支和流程混乱。
+        """
         ok1, _ = WindowsPitfallsPlugin._git_run(["add", file_rel], repo_path)
         if not ok1:
             return False
         ok2, _ = WindowsPitfallsPlugin._git_run(
             ["commit", "-m", f"record: {title}"], repo_path
         )
-        if not ok2:
-            return False
-
-        from shutil import which
-        if not which("gh"):
-            return True  # local commit only
-
-        branch = f"add/{Path(file_rel).stem}"
-
-        # Create branch, push, PR, switch back to master
-        WindowsPitfallsPlugin._git_run(["checkout", "-b", branch], repo_path)
-        ok, out = WindowsPitfallsPlugin._git_run(
-            ["push", "origin", f"HEAD:{branch}"], repo_path
-        )
-        if not ok:
-            # No write access → fork → push fork
-            WindowsPitfallsPlugin._git_run(
-                ["gh", "repo", "fork", "--remote-name", "fork", "--force"],
-                repo_path,
-            )
-            WindowsPitfallsPlugin._git_run(
-                ["push", "fork", f"HEAD:{branch}"], repo_path
-            )
-        WindowsPitfallsPlugin._git_run(
-            ["gh", "pr", "create", "--fill", "--base", "master"], repo_path
-        )
-        WindowsPitfallsPlugin._git_run(["checkout", "master"], repo_path)
-        return True
+        return ok2
 
     def _handle_search_pitfall(self, arguments: dict) -> dict:
         """Search for pitfalls matching the given criteria."""

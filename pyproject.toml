@@ -42,4 +42,4 @@ include = ["pyrite*", "pyrite_windows_pitfalls*"]
 
 [tool.setuptools.package-data]
 pyrite = ["**/*.yaml", "**/*.html", "**/*.py"]
-pyrite_windows_pitfalls = ["**/*.py"]
+pyrite_windows_pitfalls = ["**/*.py", "kb.yaml"]

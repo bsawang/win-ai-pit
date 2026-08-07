@@ -32,7 +32,13 @@ def _get_claude_settings() -> Path:
     return Path.home() / ".claude" / "settings.json"
 
 
-GITHUB_REPO = "https://github.com/bsawang/win-ai-pit.git"
+# 数据仓库（坑数据）。代码仓库 win-ai-pit 只含代码，不含数据。
+GITHUB_REPO = "https://github.com/bsawang/win-ai-pit-data.git"
+
+
+def _get_kb_yaml_src() -> Path:
+    """包内 kb.yaml 模板（schema 定义，控制层在程序项目，随代码发布）。"""
+    return Path(__file__).parent / "kb.yaml"
 
 
 def cmd_init(args):
@@ -61,8 +67,8 @@ def cmd_init(args):
             print(f"  {data_dir}")
             sys.exit(1)
 
-    # Clone repo as data directory (keep .git for sync capability)
-    print(f"克隆仓库到 {data_dir} ...")
+    # Clone data repo as data directory (keep .git for sync capability)
+    print(f"克隆数据仓库到 {data_dir} ...")
     result = subprocess.run(
         ["git", "clone", "--depth", "1", GITHUB_REPO, str(data_dir)],
         capture_output=True, text=True,
@@ -72,8 +78,13 @@ def cmd_init(args):
         sys.exit(1)
     print("克隆完成")
 
-    # Set up remote for sync (origin → GitHub)
-    # .git is kept so git pull/push work out of the box
+    # 写入 kb.yaml（schema 定义，控制层在程序项目，从包内模板复制）
+    kb_src = _get_kb_yaml_src()
+    if kb_src.exists():
+        shutil.copy2(kb_src, data_dir / "kb.yaml")
+        print(f"schema 写入: {data_dir / 'kb.yaml'}")
+    else:
+        print("警告: 包内未找到 kb.yaml 模板（pyrite_windows_pitfalls/kb.yaml）", file=sys.stderr)
 
     # Write pyrite config
     _get_pyrite_config_dir().mkdir(parents=True, exist_ok=True)
@@ -136,17 +147,11 @@ settings:
 def cmd_start(args):
     """Start MCP Server in stdio mode (for Claude Code auto-start or manual use).
 
-    Auto-detects mode:
-    - System-level: ~/.windows-pitfalls/ exists → use global config
-    - Project-level: running from repo root → use local pitfalls
+    System-level: ~/.windows-pitfalls/ 数据目录（数据仓库 clone）。
     """
     data_dir = _get_data_dir()
-    project_root = Path.cwd()
 
-    # Check if we're in the project repo with local pitfalls
-    is_project_mode = (project_root / "pitfalls").exists() and (project_root / "kb.yaml").exists()
-
-    if not is_project_mode and not data_dir.exists():
+    if not data_dir.exists():
         print("错误: 未找到数据目录。请先运行: windows-pitfalls init", file=sys.stderr)
         sys.exit(1)
 
