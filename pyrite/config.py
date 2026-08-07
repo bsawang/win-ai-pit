@@ -70,8 +70,16 @@ class KBConfig:
 
     @property
     def kb_yaml_path(self) -> Path:
-        """Path to kb.yaml config file."""
-        return self.path / "kb.yaml"
+        """Path to kb.yaml config file.
+
+        优先本地（KB 根）；本地缺失时 fallback 到程序项目包内模板
+        （控制层 schema 权威源，见 pyrite_windows_pitfalls/kb.yaml）。
+        """
+        local = self.path / "kb.yaml"
+        if local.exists():
+            return local
+        bundled = self._bundled_kb_yaml()
+        return bundled if bundled else local
 
     @property
     def kb_schema(self) -> "Any":
@@ -79,12 +87,23 @@ class KBConfig:
         if self._schema_cache is None:
             from .schema import KBSchema
 
-            schema_path = self.path / "kb.yaml"
+            schema_path = self.kb_yaml_path
             if schema_path.exists():
                 self._schema_cache = KBSchema.from_yaml(schema_path)
             else:
                 self._schema_cache = KBSchema()
         return self._schema_cache
+
+    @staticmethod
+    def _bundled_kb_yaml() -> "Path | None":
+        """程序项目包内的 kb.yaml 模板（schema 权威源随代码发布）。"""
+        try:
+            import pyrite_windows_pitfalls
+
+            p = Path(pyrite_windows_pitfalls.__file__).parent / "kb.yaml"
+            return p if p.exists() else None
+        except Exception:
+            return None
 
     def invalidate_schema_cache(self) -> None:
         """Clear cached KBSchema — call after kb.yaml changes."""
